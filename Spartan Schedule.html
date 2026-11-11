@@ -1,0 +1,100 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Spartan Schedule</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{--bg:#f3f7f4;--card:#fff;--tx:#10231a;--mu:#5d7467;--ac:#0b8a4b;--ac2:#e3f4ea;--bd:#d5e3da;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1511;--card:#13221b;--tx:#e8f3ec;--mu:#8fa89a;--ac:#2fd07f;--ac2:#173a28;--bd:#24382d;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:640px;margin:auto;padding:14px}.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:16px;margin-bottom:12px}
+h1{font-size:20px;margin:0}h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mu);margin:0 0 8px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.sub{color:var(--mu);font-size:14px}
+.badge{background:var(--ac);color:#fff;font-weight:800;font-size:26px;border-radius:12px;padding:2px 16px}
+#big{font-size:48px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ac)}#now{font-size:20px;font-weight:700}
+.row{display:flex;justify-content:space-between;padding:8px 10px;border-radius:10px}.row.on{background:var(--ac2);font-weight:700}.row.past{opacity:.45}
+.wk{display:flex;gap:6px;overflow-x:auto}.wk div{flex:1;min-width:70px;text-align:center;background:var(--ac2);border-radius:10px;padding:8px 4px;font-size:13px}.wk b{font-size:18px;display:block}
+label{display:block;font-size:14px;margin:8px 0 3px;color:var(--mu)}input,select,button{font:inherit;padding:8px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:100%}
+button{background:var(--ac);color:#fff;border:0;font-weight:700;cursor:pointer;margin-top:8px}button.alt{background:var(--ac2);color:var(--tx)}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:8px}#toast{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));background:var(--ac);color:#fff;padding:12px;border-radius:12px;display:none;font-weight:700;text-align:center}
+</style></head><body><main>
+<div class="top"><div><h1>Spartan Schedule</h1><div class="sub" id="date"></div></div><div class="badge" id="ab">A</div></div>
+<div class="card"><h2 id="sch">Today</h2><div id="now"></div><div id="big"></div><div class="sub" id="next"></div></div>
+<div class="card"><h2>Today</h2><div id="tl"></div></div>
+<div class="card"><h2>Coming up</h2><div class="wk" id="wk"></div></div>
+<div class="card"><h2>Settings</h2>
+<div class="g"><div><label>A day lunch</label><select id="lunchA"><option>A</option><option>B</option><option>C</option><option>D</option></select></div><div><label>B day lunch</label><select id="lunchB"><option>A</option><option>B</option><option>C</option><option>D</option></select></div>
+<div><label>Alert minutes before</label><select id="lead"><option>1</option><option selected>2</option><option>5</option><option>10</option></select></div></div>
+<label><input type="checkbox" id="ivOn" style="width:auto" checked> Wednesday Intervisory alert (5 min before)</label>
+<label><input type="checkbox" id="bellOn" style="width:auto" checked> Alert before every period and lunch</label>
+<button id="notif">Turn on notifications</button><div class="sub" id="nst"></div>
+<label>Today's schedule (override)</label><select id="ovr"></select>
+<div class="g"><button class="alt" id="fixA">Today is an A day</button><button class="alt" id="fixB">Today is a B day</button></div>
+<label>My classes (shown on A and B days)</label><div class="g" id="cls"></div></div>
+</main><div id="toast"></div>
+<script>
+// ===== SCHOOL DATA (edit here) =====
+const START='2026-08-19',END='2027-05-21';
+// No-school weekdays (students). VERIFY against the official calendar and add any I missed.
+const OFF=new Set(['2026-11-25','2026-11-26','2026-11-27','2027-01-01','2027-01-18','2027-02-15','2027-05-31',
+ ...['2026-12-23','2026-12-24','2026-12-25','2026-12-28','2026-12-29','2026-12-30','2026-12-31']]);
+// Special days: 'YYYY-MM-DD':'early'|'delay'|'pep'|'delaypep'|'adjusted'|'virtual'|'virtualmod'|'regular'
+const SPECIAL={ /* e.g. '2026-12-17':'delay' */ };
+let anchor={date:'2026-11-10',letter:'A'};
+const L4=(a,b,c,d)=>({A:a,B:b,C:c,D:d});
+const SC={
+regular:{n:'Regular',b:[['Period 1','08:10','09:45'],['Period 2','09:50','11:20'],['Period 3','11:25','13:25',1],['Period 4','13:30','15:00']],l:L4(['11:25','11:55'],['11:55','12:25'],['12:25','12:55'],['12:55','13:25'])},
+intervisory:{n:'Spartan Intervisory',b:[['Period 1','08:10','09:30'],['Period 2','09:35','10:50'],['Period 3','10:55','12:55',1],['Period 4','13:00','14:15'],['Intervisory','14:20','15:00']],l:L4(['10:55','11:25'],['11:25','11:55'],['11:55','12:25'],['12:25','12:55'])},
+early:{n:'Early Dismissal',b:[['Period 1','08:10','09:15'],['Period 2','09:20','10:20'],['Period 3','10:25','12:25',1],['Period 4','12:30','13:30']],l:L4(['10:25','10:55'],['10:55','11:25'],['11:25','11:55'],['11:55','12:25'])},
+delay:{n:'Two-Hour Delay',b:[['Period 1','10:10','11:05'],['Period 2','11:10','12:00'],['Period 3','12:05','14:05',1],['Period 4','14:10','15:00']],l:L4(['12:05','12:35'],['12:35','13:05'],['13:05','13:35'],['13:35','14:05'])},
+pep:{n:'Pep Rally',b:[['Period 1','08:10','09:15'],['Period 2','09:20','10:20'],['Period 3','10:25','12:25',1],['Period 4','12:30','13:45'],['Pep Rally','13:45','15:00']],l:L4(['10:25','10:55'],['10:55','11:25'],['11:25','11:55'],['11:55','12:25'])},
+delaypep:{n:'Two-Hour Delay + Pep Rally',b:[['Period 1','10:10','10:45'],['Period 2','10:50','11:20'],['Period 3','11:25','13:25',1],['Period 4','13:30','14:00'],['Pep Rally','14:00','15:00']],l:L4(['11:25','11:55'],['11:55','12:25'],['12:25','12:55'],['12:55','13:25'])},
+adjusted:{n:'Adjusted Lunches',b:[['Period 1','08:10','09:35'],['Period 2','09:40','10:55'],['Period 3','11:00','13:40',1],['Period 4','13:45','15:00']],l:L4(['11:00','11:40'],['11:40','12:20'],['12:20','13:00'],['13:00','13:40'])},
+virtual:{n:'Virtual Learning Day',b:[['Office Hours','07:30','08:55'],['Period 1','09:00','09:55'],['Period 2','10:00','10:55'],['Period 3','11:00','11:55'],['Lunch','12:00','12:55'],['Period 4','13:00','13:55'],['Office Hours','14:00','15:20']]},
+virtualmod:{n:'Modified Virtual Day',b:[['Office Hours','07:30','08:55'],['Period 1','09:00','09:40'],['Period 2','09:45','10:25'],['Period 3','10:30','11:10'],['Period 4','11:15','11:55']]}
+};
+// ===== APP =====
+const $=s=>document.querySelector(s),S={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const M=s=>{const[h,m]=s.split(':').map(Number);return h*60+m},F=n=>{let h=Math.floor(n/60),m=n%60;return(h%12||12)+':'+String(m).padStart(2,'0')+(h>=12?'p':'a')};
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+anchor=S.get('anchor',anchor);
+const school=d=>{const k=iso(d),w=d.getDay();return w>0&&w<6&&k>=START&&k<=END&&!OFF.has(k)};
+function letter(d){const a=new Date(anchor.date+'T12:00'),x=new Date(d);x.setHours(12,0,0,0);let L=anchor.letter,dir=x>=a?1:-1,c=new Date(a);while(iso(c)!==iso(x)){c.setDate(c.getDate()+dir);if(school(c))L=L==='A'?'B':'A'}return L}
+const ovr=S.get('ovr',{});
+function key(d){if(!school(d))return null;const k=iso(d);return ovr[k]||SPECIAL[k]||(d.getDay()===3?'intervisory':'regular')}
+const cfg=Object.assign({lun:{A:'A',B:'A'},lead:2,ivOn:true,bellOn:true,cls:{}},S.get('cfg',{}));
+const save=()=>S.set('cfg',cfg);
+function events(d){const k=key(d);if(!k)return[];const s=SC[k],out=[];
+ for(const[n,a,b,hasL]of s.b){if(hasL&&s.l){const lc=cfg.lun[letter(d)]||'A',[ls,le]=s.l[lc];if(M(ls)>M(a))out.push([n,a,ls]);out.push(['Lunch ('+lc+')',ls,le]);if(M(le)<M(b))out.push([n,le,b])}else out.push([n,a,b])}
+ return out}
+const cname=(n,d)=>{const m=n.match(/^Period (\d)/);if(!m)return n;const c=(cfg.cls[letter(d)]||[])[m[1]-1];return c?n+' · '+c:n};
+const fired=new Set();
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',6000);if(navigator.vibrate)navigator.vibrate(200)}
+function notify(id,t,b){if(fired.has(id))return;fired.add(id);toast(t+' — '+b);try{if('Notification'in window&&Notification.permission==='granted')new Notification(t,{body:b})}catch(e){}}
+function tick(){const d=new Date(),k=key(d),ev=events(d),nm=d.getHours()*60+d.getMinutes()+d.getSeconds()/60;
+ $('#date').textContent=d.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+ $('#ab').textContent=school(d)?letter(d):'—';$('#sch').textContent=k?SC[k].n+' schedule':'No school today';
+ let cur=null,nxt=null;for(const e of ev){if(nm>=M(e[1])&&nm<M(e[2]))cur=e;else if(nm<M(e[1])&&!nxt)nxt=e}
+ let big='',now='',nx='';
+ if(!k){now='Enjoy the day off';nxt=null;const n=new Date(d);for(let i=0;i<10;i++){n.setDate(n.getDate()+1);if(school(n)){nx='Next school day: '+n.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})+' ('+letter(n)+' day)';break}}}
+ else if(cur){now=cname(cur[0],d);const r=M(cur[2])-nm;big=Math.floor(r)+':'+String(Math.floor((r%1)*60)).padStart(2,'0');nx=nxt?'Next: '+cname(nxt[0],d)+' at '+F(M(nxt[1])):'Last block of the day'}
+ else if(nxt){const r=M(nxt[1])-nm;now=ev.indexOf(nxt)===0?'Before school':'Passing time';big=Math.floor(r)+':'+String(Math.floor((r%1)*60)).padStart(2,'0');nx='Next: '+cname(nxt[0],d)+' at '+F(M(nxt[1]))}
+ else now='School is out';
+ $('#now').textContent=now;$('#big').textContent=big;$('#next').textContent=nx;
+ $('#tl').innerHTML=ev.map(e=>`<div class="row ${e===cur?'on':nm>=M(e[2])?'past':''}"><span>${cname(e[0],d)}</span><span>${F(M(e[1]))}–${F(M(e[2]))}</span></div>`).join('')||'<div class="sub">Nothing scheduled.</div>';
+ for(const e of ev){const s=M(e[1]),lead=+cfg.lead;
+  if(cfg.bellOn&&nm>=s-lead&&nm<s)notify(iso(d)+e[0]+e[1],e[0]+' starts at '+F(s),'in about '+Math.ceil(s-nm)+' min');
+  if(cfg.ivOn&&e[0]==='Intervisory'&&nm>=s-5&&nm<s)notify(iso(d)+'iv','Intervisory is almost here','Starts at '+F(s)+' — head to your Intervisory room')}}
+function week(){const d=new Date(),o=[];for(let i=0;o.length<6&&i<40;i++,d.setDate(d.getDate()+1))if(school(d))o.push(`<div>${d.toLocaleDateString(undefined,{weekday:'short'})} ${d.getDate()}<b>${letter(d)}</b>${SC[key(d)].n.replace('Spartan ','').replace(' schedule','')}</div>`);$('#wk').innerHTML=o.join('')}
+// settings wiring
+$('#lunchA').value=cfg.lun.A;$('#lunchB').value=cfg.lun.B;$('#lead').value=cfg.lead;$('#ivOn').checked=cfg.ivOn;$('#bellOn').checked=cfg.bellOn;
+$('#lead').onchange=e=>{cfg.lead=e.target.value;save()};for(const L of['A','B'])$('#lunch'+L).onchange=e=>{cfg.lun[L]=e.target.value;save();tick()};
+for(const[id,k]of[['ivOn','ivOn'],['bellOn','bellOn']])$('#'+id).onchange=e=>{cfg[k]=e.target.checked;save()};
+$('#ovr').innerHTML='<option value="">Automatic</option>'+Object.entries(SC).map(([k,v])=>`<option value="${k}">${v.n}</option>`).join('');
+$('#ovr').value=ovr[iso(new Date())]||'';
+$('#ovr').onchange=e=>{const k=iso(new Date());if(e.target.value)ovr[k]=e.target.value;else delete ovr[k];S.set('ovr',ovr);tick();week()};
+const fix=l=>{anchor={date:iso(new Date()),letter:l};S.set('anchor',anchor);tick();week();toast('Today is now set as a '+l+' day')};
+$('#fixA').onclick=()=>fix('A');$('#fixB').onclick=()=>fix('B');
+$('#cls').innerHTML=['A','B'].map(L=>[1,2,3,4].map(n=>`<div><label>${L} day · Period ${n}</label><input data-l="${L}" data-n="${n-1}" value="${(cfg.cls[L]||[])[n-1]||''}" placeholder="Class name"></div>`).join('')).join('');
+document.querySelectorAll('#cls input').forEach(i=>i.oninput=()=>{const L=i.dataset.l;cfg.cls[L]=cfg.cls[L]||['','','',''];cfg.cls[L][i.dataset.n]=i.value;save();tick()});
+const nst=()=>$('#nst').textContent='Notifications: '+(!('Notification'in window)?'not supported here (in-app banners still work)':Notification.permission==='granted'?'on':Notification.permission==='denied'?'blocked in browser settings':'off')+'. Alerts fire while this page is open.';
+$('#notif').onclick=async()=>{try{await Notification.requestPermission()}catch(e){}nst()};nst();
+tick();week();setInterval(tick,1000);
+</script></body></html>
